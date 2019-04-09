@@ -1,0 +1,232 @@
+---
+title: "Задача на регрессионный анализ"
+author: "Usachev Pavel"
+date: '20 декабря 2016 г '
+output: html_document
+
+
+###Введение и обработка данных 
+
+Поставлена задача по имеющимся данным составить прогноз для смертей в США от несчастных случаев. Задача решается путем проведения регрессионного анализа.
+
+```{r,echo=TRUE}
+setwd("E:/RStudio/Rstudio/z5")
+deaths <- read.csv(file = "deaths.csv",header = T)
+deaths <- subset(deaths,deaths!='NA')
+deaths$deaths <- as.numeric(as.character(deaths$deaths))
+```
+
+Посмотрим на считанные данные. Указано минимальное и максимальное значения, а также количество элементов, которые попали в каждый из 20%-ных интервалов 
+
+```{r,echo=FALSE}
+l <- min(deaths); m <- max(deaths); k <- c(0:5)
+for (i in 1:5) {
+   k[i+1] <- length(deaths$deaths[deaths$deaths<=l+(i)*0.2*(m-l)])-sum(k[0:i])
+}
+s <- matrix(c(k[2:6],l,m), nrow = 1, ncol = 7, byrow = TRUE)
+colnames(s) <- c('0%-20%:','20%-40%:','40%-60%:','60%-80%:','80%-100%:','  min:','  max:')
+rownames(s) <- c('number'); s
+```
+
+```{r,echo=FALSE}
+library("ggplot2", lib.loc="E:/R-3.3.1/library") 
+library("TTR", lib.loc="E:/R-3.3.1/library") 
+library("lmtest", lib.loc="E:/R-3.3.1/library") 
+```
+
+```{r,echo=FALSE}
+dts <- ts(deaths, frequency = 12)
+plot.ts(dts)
+deaths <- t(deaths)
+```
+
+График показывает, что имеющийся ряд имеет слабо заметный тренд и аддитивную сезонность. Никаких резких изменений у ряда не наблюдается.
+
+Поместим данные о времени (месяцы) и сезонных индикаторах в переменные. И затем проведем регрессионный анализ.
+
+```{r,echo=FALSE}
+time. <- 1:(72+8)
+deaths[73:(72+8)] <- NA
+
+month.01 <- rep(c(1,0,0,0,0,0,0,0,0,0,0,0), 12+1)
+month.02 <- rep(c(0,1,0,0,0,0,0,0,0,0,0,0), 12+1)
+month.03 <- rep(c(0,0,1,0,0,0,0,0,0,0,0,0), 12+1)
+month.04 <- rep(c(0,0,0,1,0,0,0,0,0,0,0,0), 12+1)
+month.05 <- rep(c(0,0,0,0,1,0,0,0,0,0,0,0), 12+1)
+month.06 <- rep(c(0,0,0,0,0,1,0,0,0,0,0,0), 12+1)
+month.07 <- rep(c(0,0,0,0,0,0,1,0,0,0,0,0), 12+1)
+month.08 <- rep(c(0,0,0,0,0,0,0,1,0,0,0,0), 12+1)
+month.09 <- rep(c(0,0,0,0,0,0,0,0,1,0,0,0), 12+1)
+month.10 <- rep(c(0,0,0,0,0,0,0,0,0,1,0,0), 12+1)
+month.11 <- rep(c(0,0,0,0,0,0,0,0,0,0,1,0), 12+1)
+month.12 <- rep(c(0,0,0,0,0,0,0,0,0,0,0,1), 12+1)
+
+month <-data.frame(month.01[1:80],month.02[1:80],month.03[1:80],month.04[1:80],
+                  month.05[1:80],month.06[1:80],month.07[1:80],month.08[1:80],
+                  month.09[1:80],month.10[1:80],month.11[1:80],month.12[1:80])
+lay <- data.frame(deaths, time., month)
+```
+
+``` {r,echo=FALSE}
+res.01 <- lm(deaths ~ time. +        month.02[1:80] + month.03[1:80] + month.04[1:80] + 
+               month.05[1:80] + month.06[1:80] + month.07[1:80] + month.08[1:80] + 
+               month.09[1:80] + month.10[1:80] + 
+               month.11[1:80] + month.12[1:80], lay)
+
+summary(res.01)
+```
+
+Значение p-value оказалось очень малым (p-value: < 2.2e-16), поэтому отклоняется гипотеза о равенстве нулю коэффициентов регрессионной модели.
+
+Оценим визуально вид графиков полученных значений и исходных:
+
+```{r,echo=FALSE}
+plot(deaths, type="l", lwd=1, col = "blue",ylim=c(6700,m+350))
+lines(res.01$fitted.values, lty=2, lwd=2, col = "red")
+legend("topright",legend=c("Initial data","New data"),fill=c("blue","red"))
+```
+
+Подобранный ряд выдает близкие к исходным значения, если судить глядя на график. Примем этот ряд за хороший для прогнозирования и сделаем прогноз.
+
+Ниже указаны отклонения новых значений от исходных. А также отдельно вынесены прогнозируемые данные.
+
+```{r,echo=FALSE}
+i <-  predict.lm(res.01, lay)
+(i-deaths)[0:72]; c('max(|new-initial|)'); max(abs((i-deaths)[0:72]))
+i[72:80]
+i1 <- i; i1[0:71] <- NA
+
+plot(i[0:72],type="l", col=c("red"),lwd=2,ylim=c(6700,m+350),xlim=c(0,80))
+lines(i1,col='red',lwd=2,lty=5)
+lines(lay$deaths, col="blue")
+legend("topright",legend=c("Initial data","New data"),fill=c("blue","red"))
+```
+
+Заметны небольшие несовпадения по величинам в пиках. Подумаем о тренде, который присутствует в данном ряде. Пики исходного ряда "промахиваются" как выше, так и ниже линии, соединяющей пики построенного ряда.
+Полагаем, что ряд имеет квадратичный тренд.
+
+```{r,echo=FALSE}
+time. <- 1:(72+8)
+time2 <- time. * time.
+deaths[73:(72+8)] <- NA
+
+month.01 <- rep(c(1,0,0,0,0,0,0,0,0,0,0,0), 12+1)
+month.02 <- rep(c(0,1,0,0,0,0,0,0,0,0,0,0), 12+1)
+month.03 <- rep(c(0,0,1,0,0,0,0,0,0,0,0,0), 12+1)
+month.04 <- rep(c(0,0,0,1,0,0,0,0,0,0,0,0), 12+1)
+month.05 <- rep(c(0,0,0,0,1,0,0,0,0,0,0,0), 12+1)
+month.06 <- rep(c(0,0,0,0,0,1,0,0,0,0,0,0), 12+1)
+month.07 <- rep(c(0,0,0,0,0,0,1,0,0,0,0,0), 12+1)
+month.08 <- rep(c(0,0,0,0,0,0,0,1,0,0,0,0), 12+1)
+month.09 <- rep(c(0,0,0,0,0,0,0,0,1,0,0,0), 12+1)
+month.10 <- rep(c(0,0,0,0,0,0,0,0,0,1,0,0), 12+1)
+month.11 <- rep(c(0,0,0,0,0,0,0,0,0,0,1,0), 12+1)
+month.12 <- rep(c(0,0,0,0,0,0,0,0,0,0,0,1), 12+1)
+
+month<-data.frame(month.01[1:80],month.02[1:80],month.03[1:80],month.04[1:80],
+                  month.05[1:80],month.06[1:80],month.07[1:80],month.08[1:80],
+                  month.09[1:80],month.10[1:80],month.11[1:80],month.12[1:80])
+lay <- data.frame(deaths, time., time2, month)
+
+res.01 <- lm(deaths ~ time. + time2 +       month.02[1:80] + month.03[1:80] + month.04[1:80] + 
+               month.05[1:80] + month.06[1:80] + month.07[1:80] + month.08[1:80] + 
+               month.09[1:80] + month.10[1:80] + 
+               month.11[1:80] + month.12[1:80], lay)
+
+#summary(res.01)
+
+plot(deaths, type="l", lwd=1, col = "blue",ylim=c(6700,m+350))
+lines(res.01$fitted.values, lty=2, lwd=2, col = "red")
+legend("topright",legend=c("Initial data","New data"),fill=c("blue","red"))
+```
+
+Такая модель с квадратичным трендом действительно оказалась лучше, пики на графиках совпадают с большей точностью.
+
+```{r,echo=FALSE}
+i = predict.lm(res.01, lay)
+(i-deaths)[0:72]; c('max(|new-initial|)'); max(abs((i-deaths)[0:72]))
+i[72:80]
+i1 <- i; i1[0:71] <- NA
+
+plot(i[0:72],type="l", col=c("red"),lwd=2,ylim=c(6700,m+350),xlim=c(0,80))
+lines(i1,col='red',lwd=2,lty=5)
+lines(lay$deaths, col="blue")
+legend("top",legend=c("Initial data","New data"),fill=c("blue","red"))
+```
+
+Попробуем уменьшить количество предикторов. Объединим месяцы, значения которых близки, в одну переменную. И проделаем то же самое.
+
+```{r,echo=FALSE}
+
+month34 <- month.03 + month.04
+month910 <- month.09 + month.10
+month1112 <- month.11 + month.12
+
+res.01 <- lm(deaths ~ time. + time2 +       month.02[1:80] + month34[1:80] + 
+               month.05[1:80] + month.06[1:80] + month.07[1:80] + month.08[1:80] + 
+               month910[1:80] + 
+               month1112[1:80], lay)
+
+#summary(res.01)
+
+plot(deaths, type="l", lwd=1, col = "blue",ylim=c(6700,m+350))
+lines(res.01$fitted.values, lty=2, lwd=2, col = "red")
+legend("topright",legend=c("Initial data","New data"),fill=c("blue","red"))
+
+i = predict.lm(res.01, lay)
+(i-deaths)[0:72]; c('max(|new-initial|)'); max(abs((i-deaths)[0:72]))
+i[72:80]
+i1 <- i; i1[0:71] <- NA
+
+
+plot(i[0:72],type="l", col=c("red"),lwd=2,ylim=c(6700,m+350),xlim=c(0,80))
+lines(i1,col='red',lwd=2,lty=5)
+lines(lay$deaths, col="blue")
+legend("top",legend=c("Initial data","New data"),fill=c("blue","red"))
+
+```
+
+График не изменился заметно, некоторые вторичные пики стали менее выраженными, но в численном отношении есть изменения, получившиеся после объединения предикторов, то есть проведения сглаживания графика.
+
+###Анализ остатков
+
+Посмотрим на остатки. Необходимо избежать возможность ошибок и автокорреляции.
+Распределение остатков:
+
+```{r,echo=FALSE}
+plot(res.01)
+#qqline(res.01$residuals)
+hist(res.01$residuals)
+shapiro.test(res.01$residuals)
+```
+
+Визуально не удается найти какие-то признаки непостоянства дисперсии и тем более какие-то зависимости. Можно предположить отсутствие ошибки спецификации.
+
+При рассмотрении графика тяжело визуально обнаружить признаки непостоянства дисперсии. Не обнаруживают себя и любого рода зависимости. Полагаем, что ошибка в спецификации отсутствует. Считаем, что распределение остатков является нормальным.
+
+Посмотрим на остатки с использованием функции rstudent
+
+```{r,echo=FALSE}
+hist(rstudent(res.01))
+
+```
+
+Распределение выглядит равномерным и нормальным
+С помощью теста Дарбина-Уотсона проверим отсутствие автокорреляции остатков.
+
+```{r,echo=FALSE}
+dwtest(res.01)
+```
+
+Критерий Дарбина-Уотсона указывает на отсутствие автокорреляции соседних остатков. Однако, автокорреляция может быть и сложнее.
+
+### Экспоненциальное сглаживание
+
+```{r,echo=FALSE}
+hw <- HoltWinters(dts, seasonal="additive")
+plot(hw)
+plot(fitted(hw))
+pre=predict(hw, n.ahead=12)
+
+ts.plot(dts, pre, hw$fitted[,1], col=c("blue", "red", "orange"))
+```

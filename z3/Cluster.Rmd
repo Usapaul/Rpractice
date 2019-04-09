@@ -1,0 +1,196 @@
+---
+title: "Задача на кластеризацию"
+author: "Usachev Pavel"
+date: '12 декабря 2016 г '
+output: html_document
+---
+
+### Введение и обработка данных
+
+Дана задача осуществить разбиение на кластеры имеющиеся данные о пользователях. Проверяется нулевая гипотеза: распределение имеющейся выборки равномерное, никакое разбиение данных на группы не дает статистически значимого результата. Альтернативная ей: можно найти разбиение на группы (кластеры), для которого одна из переменных будет статистически значимо связана с определением групп.
+
+Чтение таблицы с данными:
+
+```{r, echo=TRUE}
+setwd("E:/RStudio/Rstudio/z3")
+edmins <- read.csv(file = "Edmins.csv", header = T, sep=";")
+colnames(edmins) <- c("sex","age","channel","profession","press")
+xedmins <- edmins
+```
+
+Посмотрим на данные:
+
+```{r, echo=FALSE}
+fedmins <- edmins
+fedmins$sex[fedmins$sex==0] <- 2
+fedmins$sex <- factor(fedmins$sex)
+fedmins$age <- factor(fedmins$age)
+fedmins$channel <- factor(fedmins$channel)
+fedmins$profession <- factor(fedmins$profession)
+fedmins$press <- factor(fedmins$press)
+
+for (i in 1:5) {
+    xlength <- c(1:length(levels(fedmins[,i])))
+    for (k in 1:length(levels(fedmins[,i]))) {
+    xlength[k] <- length(fedmins[,i][fedmins[,i]==k])
+    }
+    names(fedmins)[i]
+    str(names(fedmins)[i]); str(xlength)
+}
+```
+
+Выполним стандартизацию данных z-преобразованием.
+
+```{r, echo=FALSE}
+edmins$sex=scale(edmins$sex)
+edmins$age=scale(edmins$age)
+edmins$channel=scale(edmins$channel)
+edmins$profession=scale(edmins$profession)
+edmins$press=scale(edmins$press)
+str(edmins)
+```
+
+
+### Иерархический кластерный анализ
+
+```{r, echo=FALSE}
+d_man <- dist(edmins, method = "manhattan", diag = FALSE, upper = FALSE, p = 2)
+h <- hclust(d_man, method = "ward.D2", members = NULL)
+```
+
+Посмотрим на график "каменистой осыпи":
+
+```{r}
+p_man <- plot(rev(h$height)[1:15], type="b", xlab = "Cluster number", ylab = "manhattan")
+```
+
+
+Из графика получаем, что оптимальное количество кластеров равно трем. Получится такая картина:
+
+```{r}
+plot(h, hang = 1)
+rect.hclust(h,3, border="red")
+```
+
+Построим проекцию на плоскость имеющихся данных.
+
+```{r, echo=FALSE}
+cuter=cutree(h,3)
+edmins$clusters <- as.factor(cuter)
+xedmins$clusters <- edmins$clusters
+plot(cmdscale(d_man), col = edmins$clusters, xlab = "Index", ylab = "Y")
+```
+
+Покажем разбиение переменных на кластеры:
+
+```{r,echo=TRUE}
+table(edmins$clusters, xedmins$sex)
+table(edmins$clusters, xedmins$age)
+table(edmins$clusters, xedmins$channel)
+table(edmins$clusters, xedmins$profession)
+table(edmins$clusters, xedmins$press)
+```
+
+Из результатов видно, что в кластерах явно имеет место разбиение по половому признаку. А также присутствует ярко выраженное распределение по кластерам в согласии с профессией: во втором кластере люди только одной профессии, причем, почти все люди с данной профессией попали в этот кластер. Также эти люди во втором классе, являющиеся представителями одного пола и представляющими один класс профессий, также предпочитают только три класса телеканалов из пяти. Все представители другого пола находятся в третьем кластере. К ним можно преписать связь со вторым классом профессии, а также предпочтение отдается преимущественно первому классу телеканалов.
+
+
+Исследуем связь между значениями переменных при помощи применения дисперсионного анализа.
+
+```{r,echo=FALSE}
+p <- c(1:(dim(edmins)[2]-1))
+
+for(i in 1:(dim(edmins)[2]-1)){
+  p[i] <- summary(aov(edmins[,i]~edmins$clusters,data=edmins))[[1]][1,'Pr(>F)']
+}
+p
+```
+
+Вектор, выражающий значения Pr(>F), соответствующие результатам дисперсионного анализа, показывает также степень взаимосвязи каждой из пяти переменных с переменной кластеров. Очевидна взаимосвязь для пола и для профессии (значения p-value < 2*10^(-45)).
+
+
+### Метод k-средних
+
+```{r,echo=FALSE}
+wss <- (nrow(edmins[,1:5]) - 1) * sum(apply(edmins[,1:5],2,var))
+for (i in 2:20) wss[i] <- kmeans(edmins[,1:5], 
+                                 centers=i, nstart=20)$tot.withinss
+plot(1:20, wss, type="b", xlab="Number of Clusters",
+     ylab="Within groups sum of squares") 
+```
+
+Наиболее подходящее количество кластеров равно трем и здесь, но посмотрим также результат работы функции kmeans для случаев с двумя и четырьмя кластерами.
+
+```{r, echo=FALSE}
+clus4 <- kmeans(edmins, 4)
+#c("Четыре кластера")
+clus4$withinss 
+
+clus3 <- kmeans(edmins, 3)
+#c("Три кластера")
+clus3$withinss
+
+clus2 <- kmeans(edmins, 2)
+#c("Два кластера")
+clus2$withinss
+```
+
+Построим проекцию на плоскость наших данных:
+
+```{r}
+kmean=kmeans(edmins[,1:5], 
+             centers=3, nstart=20)
+plot(cmdscale(d_man), col = kmean$cluster, xlab = "Index", ylab = "Y")
+```
+
+Визуально проанализируем получившееся разбиение при помощи table:
+
+```{r,echo=FALSE}
+kmedmins=edmins
+kmxedmins=xedmins
+kmedmins$clusters=as.factor(kmean$cluster)
+kmxedmins$clusters=as.factor(kmean$cluster)
+```
+```{r,echo=FALSE}
+table(kmedmins$clusters, kmxedmins$sex)
+table(kmedmins$clusters, kmxedmins$age)
+table(kmedmins$clusters, kmxedmins$channel)
+table(kmedmins$clusters, kmxedmins$profession)
+table(kmedmins$clusters, kmxedmins$press)
+```
+
+И теперь следует использовать aov для проведения дисперсионного анализа для всех пяти пар -- каждая переменная с переменной кластеров.
+
+```{r}
+for(i in 1:(dim(kmedmins)[2]-1)){
+  p[i]=summary(aov(kmedmins[,i]~kmedmins$clusters,kmedmins))[[1]][1,'Pr(>F)']
+}
+p
+```
+
+
+### Вывод
+
+Кластеры имеют явное разбиение по половому признаку. В третьем кластере оказались все люди одного пола и только они. 
+
+А другой пол разделился на два кластера почти на равные части. Заметно, что эти люди были разбиты на данные два кластера так, что в первом оказалось большинство людей, принадлежащих первому и второму классу возрастов. Напротив, во втором кластере оказалось большинство из тех, кто представляет четвертый и пятый классы возрастов. Глядя на таблицу зависимости предпочитаемых телеканалов от кластеров, и еще не успев забыть такую же таблицу для возрастов, очевидно, что предпочитаемые телеканалы у этих людей данного пола соответствуют их возрастной категории.
+
+Также заметно, что никто из людей второго кластера не принадлежит профессии первого класса. Люди противоположного пола из третьего класса, по сравнению с людьми из первых двух, почти все (за исключением одного человека, что составляет 1/30) не принадлежат профессии третьего класса.
+
+Для переменной Пресса можно выделить только два значимых факта. 2-й класс прессы предпочитают люди из первых двух кластеров, когда из третьего кластера ее предпочитают только двое (2/72). Но при этом люди из третьего кластера в основном предпочитают прессу класса №1.
+
+Теперь сравним полученные разбиения на кластеры для обоих методов -- иерархический анализ (edmins) и метод k-средних (kmedmins).
+
+```{r,echo=TRUE}
+table(edmins$clusters,kmedmins$clusters)
+```
+
+Как уже было сказано, присутствует явно выраженное разбиение по половому признаку. Люди одного пола, который представляет меньшинство, в обоих случаях попали в кластер №3.
+Также было заметно, что разбиения в случаях применения обоих методов указывают на зависимость разбиения от профессии.
+
+```{r}
+table(edmins$clusters, xedmins$profession)
+table(kmedmins$clusters, kmxedmins$profession)
+```
+
+Разбиение на кластеры людей, относящихся к первому классу профессий, идентичное в двух случаях разбиения. Понятно, что, если в третьем кластере люди только одного пола в обоих случаях, то для этих разбиений будет идентично и разбиение в третьем кластере по профессиям. Но так оказалось, что для обоих случаев во втором кластере не нашлось людей, принадлежащих первому классу профессий.
+
